@@ -5,49 +5,59 @@ package provider
 
 import (
 	"context"
-	"net/http"
+	"os"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/replicatedhq/replicated/pkg/kotsclient"
+	"github.com/replicatedhq/replicated/pkg/platformclient"
 )
 
-// Ensure ScaffoldingProvider satisfies various provider interfaces.
-var _ provider.Provider = &ScaffoldingProvider{}
+// Ensure ReplicatedProvider satisfies various provider interfaces.
+var _ provider.Provider = &ReplicatedProvider{}
 
-// ScaffoldingProvider defines the provider implementation.
-type ScaffoldingProvider struct {
+// ReplicatedProvider defines the provider implementation.
+type ReplicatedProvider struct {
 	// version is set to the provider version on release, "dev" when the
 	// provider is built and ran locally, and "test" when running acceptance
 	// testing.
 	version string
 }
 
-// ScaffoldingProviderModel describes the provider data model.
-type ScaffoldingProviderModel struct {
+// ReplicatedProviderModel describes the provider data model.
+type ReplicatedProviderModel struct {
 	Endpoint types.String `tfsdk:"endpoint"`
+	ApiToken types.String `tfsdk:"api_token"`
 }
 
-func (p *ScaffoldingProvider) Metadata(ctx context.Context, req provider.MetadataRequest, resp *provider.MetadataResponse) {
-	resp.TypeName = "scaffolding"
+func (p *ReplicatedProvider) Metadata(ctx context.Context, req provider.MetadataRequest, resp *provider.MetadataResponse) {
+	resp.TypeName = "replicated"
 	resp.Version = p.version
 }
 
-func (p *ScaffoldingProvider) Schema(ctx context.Context, req provider.SchemaRequest, resp *provider.SchemaResponse) {
+func (p *ReplicatedProvider) Schema(ctx context.Context, req provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Attributes: map[string]schema.Attribute{
 			"endpoint": schema.StringAttribute{
-				MarkdownDescription: "Example provider attribute",
+				MarkdownDescription: "Vendor API endpoint",
 				Optional:            true,
+			},
+			"api_token": schema.StringAttribute{
+				MarkdownDescription: "Vendor API token",
+				Optional:            true,
+				Sensitive:           true,
 			},
 		},
 	}
 }
 
-func (p *ScaffoldingProvider) Configure(ctx context.Context, req provider.ConfigureRequest, resp *provider.ConfigureResponse) {
-	var data ScaffoldingProviderModel
+func (p *ReplicatedProvider) Configure(ctx context.Context, req provider.ConfigureRequest, resp *provider.ConfigureResponse) {
+	apiOrigin := os.Getenv("REPLICATED_API_ORIGIN")
+	apiToken := os.Getenv("REPLICATED_API_TOKEN")
+	var data ReplicatedProviderModel
 
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
 
@@ -55,22 +65,48 @@ func (p *ScaffoldingProvider) Configure(ctx context.Context, req provider.Config
 		return
 	}
 
-	// Configuration values are now available.
-	// if data.Endpoint.IsNull() { /* ... */ }
+	if data.Endpoint.ValueString() != "" {
+		apiOrigin = data.Endpoint.ValueString()
+	}
+
+	if data.ApiToken.ValueString() != "" {
+		apiToken = data.ApiToken.ValueString()
+	}
+
+	if apiOrigin == "" {
+		apiOrigin = "https://api.replicated.com/vendor"
+	}
+
+	if apiToken == "" {
+		resp.Diagnostics.AddError(
+			"Missing API Token Configuration",
+			"While configuring the provider, the API token was not found in "+
+				"the REPLICATED_API_TOKEN environment variable or provider "+
+				"configuration block api_token attribute.",
+		)
+		// Not returning early allows the logic to collect all errors.
+	}
+
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	httpClient := platformclient.NewHTTPClient(apiOrigin, apiToken)
+	kotsAPI := &kotsclient.VendorV3Client{HTTPClient: *httpClient}
 
 	// Example client configuration for data sources and resources
-	client := http.DefaultClient
+	client := kotsAPI
 	resp.DataSourceData = client
 	resp.ResourceData = client
 }
 
-func (p *ScaffoldingProvider) Resources(ctx context.Context) []func() resource.Resource {
+func (p *ReplicatedProvider) Resources(ctx context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
-		NewExampleResource,
+		NewClusterResource,
 	}
 }
 
-func (p *ScaffoldingProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
+func (p *ReplicatedProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
 		NewExampleDataSource,
 	}
@@ -78,7 +114,7 @@ func (p *ScaffoldingProvider) DataSources(ctx context.Context) []func() datasour
 
 func New(version string) func() provider.Provider {
 	return func() provider.Provider {
-		return &ScaffoldingProvider{
+		return &ReplicatedProvider{
 			version: version,
 		}
 	}
