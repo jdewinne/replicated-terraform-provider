@@ -44,9 +44,12 @@ func (r *ClusterResource) Schema(ctx context.Context, req resource.SchemaRequest
 		MarkdownDescription: "Cluster resource",
 
 		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				Computed: true,
+			},
 			"distribution": schema.StringAttribute{
 				MarkdownDescription: "Kubernetes distribution",
-				Optional:            false,
+				Required:            true,
 			},
 		},
 	}
@@ -91,7 +94,7 @@ func (r *ClusterResource) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 	if ve != nil {
-		resp.Diagnostics.AddError("Validation Error", fmt.Sprintf("Unable to create cluster, got error: %s", ve))
+		resp.Diagnostics.AddError("Validation Error", fmt.Sprintf("Unable to create cluster, got error: %v", ve))
 	}
 
 	if resp.Diagnostics.HasError() {
