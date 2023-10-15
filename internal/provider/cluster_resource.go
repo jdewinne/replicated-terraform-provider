@@ -35,6 +35,7 @@ type ClusterResource struct {
 type ClusterResourceModel struct {
 	Id           types.String `tfsdk:"id"`
 	Distribution types.String `tfsdk:"distribution"`
+	Version      types.String `tfsdk:"version"`
 	WaitDuration types.String `tfsdk:"wait_duration"`
 	Kubeconfig   types.String `tfsdk:"kubeconfig"`
 }
@@ -55,6 +56,11 @@ func (r *ClusterResource) Schema(ctx context.Context, req resource.SchemaRequest
 			"distribution": schema.StringAttribute{
 				MarkdownDescription: "Kubernetes distribution",
 				Required:            true,
+			},
+			"version": schema.StringAttribute{
+				MarkdownDescription: "Kubernetes version",
+				Optional:            true,
+				Computed:            true,
 			},
 			"wait_duration": schema.StringAttribute{
 				MarkdownDescription: "How long to wait for the cluster to be ready",
@@ -107,6 +113,9 @@ func (r *ClusterResource) Create(ctx context.Context, req resource.CreateRequest
 	opts := kotsclient.CreateClusterOpts{
 		KubernetesDistribution: data.Distribution.ValueString(),
 	}
+	if data.Version.ValueString() != "" {
+		opts.KubernetesVersion = data.Version.ValueString()
+	}
 	cl, ve, err := r.client.CreateCluster(opts)
 	if err != nil {
 		resp.Diagnostics.AddError("Server Error", fmt.Sprintf("Unable to create cluster, got error: %s", err))
@@ -122,6 +131,7 @@ func (r *ClusterResource) Create(ctx context.Context, req resource.CreateRequest
 
 	// save cluster id to state
 	data.Id = types.StringValue(cl.ID)
+	data.Version = types.StringValue(cl.KubernetesVersion)
 
 	tflog.Trace(ctx, "created a cluster")
 
@@ -156,13 +166,21 @@ func (r *ClusterResource) Read(ctx context.Context, req resource.ReadRequest, re
 		return
 	}
 
-	// If applicable, this is a great opportunity to initialize any necessary
-	// provider client data and make a call using it.
-	// httpResp, err := r.client.Do(httpReq)
-	// if err != nil {
-	//     resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read example, got error: %s", err))
-	//     return
-	// }
+	cl, err := r.client.GetCluster(data.Id.ValueString())
+	if err != nil {
+		resp.State.RemoveResource(ctx)
+		return
+	}
+
+	// if the cluster is running, get the kubeconfig
+	if cl.Status == rtypes.ClusterStatusRunning {
+		k, err := r.client.GetClusterKubeconfig(cl.ID)
+		if err != nil {
+			resp.Diagnostics.AddError("Server Error", fmt.Sprintf("Unable to get cluster kubeconfig, got error: %s", err))
+			return
+		}
+		data.Kubeconfig = types.StringValue(string(k))
+	}
 
 	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
