@@ -235,6 +235,14 @@ func (r *ClusterResource) Read(ctx context.Context, req resource.ReadRequest, re
 		return
 	}
 
+	// save cluster id to state
+	data.Id = types.StringValue(cl.ID)
+	data.Name = types.StringValue(cl.Name)
+	data.Distribution = types.StringValue(cl.KubernetesDistribution)
+	data.Version = types.StringValue(cl.KubernetesVersion)
+	data.Disk = types.Int64Value(cl.DiskGiB)
+	data.Nodes = types.Int64Value(int64(cl.NodeCount))
+
 	// if the cluster is running, get the kubeconfig
 	if cl.Status == rtypes.ClusterStatusRunning {
 		k, err := r.client.GetClusterKubeconfig(cl.ID)
@@ -243,6 +251,8 @@ func (r *ClusterResource) Read(ctx context.Context, req resource.ReadRequest, re
 			return
 		}
 		data.Kubeconfig = types.StringValue(string(k))
+	} else {
+		data.Kubeconfig = types.StringValue("")
 	}
 
 	// Save updated data into Terraform state
