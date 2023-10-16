@@ -37,6 +37,7 @@ type ClusterResourceModel struct {
 	Name         types.String `tfsdk:"name"`
 	Distribution types.String `tfsdk:"distribution"`
 	Version      types.String `tfsdk:"version"`
+	TTL          types.String `tfsdk:"ttl"`
 	WaitDuration types.String `tfsdk:"wait_duration"`
 	Kubeconfig   types.String `tfsdk:"kubeconfig"`
 }
@@ -55,18 +56,22 @@ func (r *ClusterResource) Schema(ctx context.Context, req resource.SchemaRequest
 				Computed: true,
 			},
 			"name": schema.StringAttribute{
-				MarkdownDescription: "Cluster name",
+				MarkdownDescription: "Cluster name (defaults to random name)",
 				Computed:            true,
 				Optional:            true,
 			},
 			"distribution": schema.StringAttribute{
-				MarkdownDescription: "Kubernetes distribution",
+				MarkdownDescription: "Kubernetes distribution of the cluster to provision",
 				Required:            true,
 			},
 			"version": schema.StringAttribute{
-				MarkdownDescription: "Kubernetes version",
+				MarkdownDescription: "Kubernetes version to provision (format is distribution dependent)",
 				Optional:            true,
 				Computed:            true,
+			},
+			"ttl": schema.StringAttribute{
+				MarkdownDescription: "Cluster TTL (duration, max 48h",
+				Optional:            true,
 			},
 			"wait_duration": schema.StringAttribute{
 				MarkdownDescription: "How long to wait for the cluster to be ready",
@@ -110,10 +115,24 @@ func (r *ClusterResource) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 
-	duration, err := time.ParseDuration(data.WaitDuration.ValueString())
-	if err != nil {
-		resp.Diagnostics.AddError("Invalid wait duration", fmt.Sprintf("Unable to parse wait duration, got error: %s", err))
-		return
+	var waitDuration time.Duration
+	if data.WaitDuration.ValueString() != "" {
+		d, err := time.ParseDuration(data.WaitDuration.ValueString())
+		if err != nil {
+			resp.Diagnostics.AddError("Invalid wait duration", fmt.Sprintf("Unable to parse wait duration, got error: %s", err))
+			return
+		}
+		waitDuration = d
+	}
+
+	var ttl time.Duration
+	if data.TTL.ValueString() != "" {
+		t, err := time.ParseDuration(data.TTL.ValueString())
+		if err != nil {
+			resp.Diagnostics.AddError("Invalid ttl", fmt.Sprintf("Unable to parse ttl, got error: %s", err))
+			return
+		}
+		ttl = t
 	}
 
 	opts := kotsclient.CreateClusterOpts{
@@ -125,6 +144,10 @@ func (r *ClusterResource) Create(ctx context.Context, req resource.CreateRequest
 	if data.Version.ValueString() != "" {
 		opts.KubernetesVersion = data.Version.ValueString()
 	}
+	if ttl > 0 {
+		opts.TTL = data.TTL.ValueString()
+	}
+
 	cl, ve, err := r.client.CreateCluster(opts)
 	if err != nil {
 		resp.Diagnostics.AddError("Server Error", fmt.Sprintf("Unable to create cluster, got error: %s", err))
@@ -146,8 +169,8 @@ func (r *ClusterResource) Create(ctx context.Context, req resource.CreateRequest
 	tflog.Trace(ctx, "created a cluster")
 
 	// if the wait flag was provided, we poll the api until the cluster is ready, or a timeout
-	if duration > 0 {
-		c, err := waitForCluster(r.client, cl.ID, duration)
+	if waitDuration > 0 {
+		c, err := waitForCluster(r.client, cl.ID, waitDuration)
 		if err != nil {
 			resp.Diagnostics.AddError("Server Error", fmt.Sprintf("Unable to create cluster, got error: %s", err))
 			return
@@ -160,6 +183,8 @@ func (r *ClusterResource) Create(ctx context.Context, req resource.CreateRequest
 			}
 			data.Kubeconfig = types.StringValue(string(k))
 		}
+	} else {
+		data.Kubeconfig = types.StringValue("")
 	}
 
 	// Save data into Terraform state
