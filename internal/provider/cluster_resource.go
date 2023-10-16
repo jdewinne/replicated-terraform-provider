@@ -37,6 +37,9 @@ type ClusterResourceModel struct {
 	Name         types.String `tfsdk:"name"`
 	Distribution types.String `tfsdk:"distribution"`
 	Version      types.String `tfsdk:"version"`
+	InstanceType types.String `tfsdk:"instance_type"`
+	Disk         types.Int64  `tfsdk:"disk"`
+	Nodes        types.Int64  `tfsdk:"nodes"`
 	TTL          types.String `tfsdk:"ttl"`
 	WaitDuration types.String `tfsdk:"wait_duration"`
 	Kubeconfig   types.String `tfsdk:"kubeconfig"`
@@ -66,6 +69,20 @@ func (r *ClusterResource) Schema(ctx context.Context, req resource.SchemaRequest
 			},
 			"version": schema.StringAttribute{
 				MarkdownDescription: "Kubernetes version to provision (format is distribution dependent)",
+				Optional:            true,
+				Computed:            true,
+			},
+			"instance_type": schema.StringAttribute{
+				MarkdownDescription: "The type of instance to use (e.g. m6i.large)",
+				Optional:            true,
+			},
+			"disk": schema.Int64Attribute{
+				MarkdownDescription: "Disk Size (GiB) to request per node (default 50)",
+				Optional:            true,
+				Computed:            true,
+			},
+			"nodes": schema.Int64Attribute{
+				MarkdownDescription: "Node count (default 1)",
 				Optional:            true,
 				Computed:            true,
 			},
@@ -144,6 +161,15 @@ func (r *ClusterResource) Create(ctx context.Context, req resource.CreateRequest
 	if data.Version.ValueString() != "" {
 		opts.KubernetesVersion = data.Version.ValueString()
 	}
+	if data.InstanceType.ValueString() != "" {
+		opts.InstanceType = data.InstanceType.ValueString()
+	}
+	if data.Disk.ValueInt64() > 0 {
+		opts.DiskGiB = data.Disk.ValueInt64()
+	}
+	if data.Nodes.ValueInt64() > 0 {
+		opts.NodeCount = int(data.Nodes.ValueInt64())
+	}
 	if ttl > 0 {
 		opts.TTL = data.TTL.ValueString()
 	}
@@ -165,6 +191,8 @@ func (r *ClusterResource) Create(ctx context.Context, req resource.CreateRequest
 	data.Id = types.StringValue(cl.ID)
 	data.Name = types.StringValue(cl.Name)
 	data.Version = types.StringValue(cl.KubernetesVersion)
+	data.Disk = types.Int64Value(cl.DiskGiB)
+	data.Nodes = types.Int64Value(int64(cl.NodeCount))
 
 	tflog.Trace(ctx, "created a cluster")
 

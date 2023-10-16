@@ -13,4 +13,7 @@ resource "replicated_cluster" "tf_cluster" {
   distribution = "kind"
   wait_duration = "20m"
   ttl = "10m"
+  instance_type = "r1.large"
+  nodes = 1
+  disk = 100
 }
