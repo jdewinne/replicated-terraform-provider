@@ -9,6 +9,7 @@ provider "replicated" {
 }
 
 resource "replicated_cluster" "tf_cluster" {
+  name = "terraformCLuster"
   distribution = "kind"
   wait_duration = "20m"
 }

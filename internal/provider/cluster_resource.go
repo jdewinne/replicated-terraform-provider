@@ -34,6 +34,7 @@ type ClusterResource struct {
 // ClusterResourceModel describes the resource data model.
 type ClusterResourceModel struct {
 	Id           types.String `tfsdk:"id"`
+	Name         types.String `tfsdk:"name"`
 	Distribution types.String `tfsdk:"distribution"`
 	Version      types.String `tfsdk:"version"`
 	WaitDuration types.String `tfsdk:"wait_duration"`
@@ -52,6 +53,11 @@ func (r *ClusterResource) Schema(ctx context.Context, req resource.SchemaRequest
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed: true,
+			},
+			"name": schema.StringAttribute{
+				MarkdownDescription: "Cluster name",
+				Computed:            true,
+				Optional:            true,
 			},
 			"distribution": schema.StringAttribute{
 				MarkdownDescription: "Kubernetes distribution",
@@ -113,6 +119,9 @@ func (r *ClusterResource) Create(ctx context.Context, req resource.CreateRequest
 	opts := kotsclient.CreateClusterOpts{
 		KubernetesDistribution: data.Distribution.ValueString(),
 	}
+	if data.Name.ValueString() != "" {
+		opts.Name = data.Name.ValueString()
+	}
 	if data.Version.ValueString() != "" {
 		opts.KubernetesVersion = data.Version.ValueString()
 	}
@@ -131,6 +140,7 @@ func (r *ClusterResource) Create(ctx context.Context, req resource.CreateRequest
 
 	// save cluster id to state
 	data.Id = types.StringValue(cl.ID)
+	data.Name = types.StringValue(cl.Name)
 	data.Version = types.StringValue(cl.KubernetesVersion)
 
 	tflog.Trace(ctx, "created a cluster")
